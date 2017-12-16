@@ -25,7 +25,44 @@ n = Names(dir_path),1950,2000, 0.01)
 l = ['John', 'Anna', 'Henry', 'Ophelia', 'Henry', 'Allison', 'Allison']
 # Analyze the list
 n.create_prob_mapping(l)
+
+
+known bugs
+- can't run analysis if start_year = stop_year
+
 """
+
+def test():
+    # create sample population -------------------------------------
+    dir_path = 'C:/Users/karen/Downloads/names'
+    start_year = 1965
+    stop_year = 1995
+    inclusion_thresh_pct = 0
+    # create Names object
+    n0 = Names(dir_path, start_year, stop_year, inclusion_thresh_pct)
+
+    # sample pop distribution dictionary
+    sample_pop_dist = dict()
+    sample_pop_dist[1965] = 50
+#    sample_pop_dist[1975] = 
+#    sample_pop_dist[1985] = 10
+    sample_pop_dist[1995] = 50
+    # size of sample population
+    sample_pop_num = 200
+    sample_pop = n0.build_sample_population(sample_pop_dist, sample_pop_num)
+#    print(sample_pop)
+    
+    # analyze sample population ------------------------------------
+    start_year = 1950
+    stop_year = 2010
+    inclusion_thresh_pct = 0.01
+    n1 = Names(dir_path, start_year, stop_year, inclusion_thresh_pct)
+    n1.create_prob_mapping(sample_pop)    
+    
+    
+    return
+
+
 
 
 class Names:
@@ -94,7 +131,8 @@ class Names:
             for i in ds:
                 i = i.split(',')
                 pct = int(i[ssa_idx_num_births])/float(total_annual_births)*100
-                if pct*2 > self.inclusion_threshold_pct:
+                if (pct*2) > self.inclusion_threshold_pct:
+#                    print('new entry: ', i[ssa_idx_name], pct, pct*2)
                     # check to see if the name is already listed
                     if i[ssa_idx_name] not in self.name_idx:
                         # add it
@@ -144,13 +182,13 @@ class Names:
             theo = self.name_data[self.name_idx[name],y_i]
             if (theo > 0):
                 experimental = name_prop
-                error = abs(theo - experimental)/theo
-    #            mapping[y_i] = (1 - (error)**2)*theo #1            
-    #            mapping[y_i] = (1 - (error)**2)*theo #2
-                mapping[y_i] = (error*theo)**2 #3
-    #            mapping[y_i] *= (lower_lim < mapping[y_i] < 1)
-            
+                error = abs(theo - experimental)/theo      
+                mapping[y_i] = 1000 - (error**2)
+                mapping[y_i] *= (0 < mapping[y_i])
+            else:
+                mapping[y_i] = 0            
         return mapping
+        
     def create_prob_mapping(self, names_list, lower_lim = 0):
         """
         Takes in a list of names.
@@ -162,21 +200,21 @@ class Names:
         sample_pop = convert_simple_list_to_dict(names_list)
         # convert from raw numbers to proportions
         sample_pop = convert_names_to_props(sample_pop)
-#        print(sample_pop)
         yrs = range(self.start_year, self.stop_year + 1)
-        all_names = np.zeros(len(yrs))
+        all_names = np.zeros(len(yrs)) + 1
+        map_ctr= 0
         for name in sample_pop.keys():
             prop = sample_pop[name]
             mapping = self.build_prob_map_one_name(name, prop, lower_lim)
-#            print(mapping)
             if mapping != []:
                 all_names += mapping
                 plt.plot(yrs, mapping, label = name)
+                map_ctr += 1
         plt.xlabel('years')
         plt.subplot(2,1,2)
-        plt.plot(yrs, all_names, 'b.-')
-        return yrs, all_names
-#        plt.legend()
+        plt.plot(yrs, all_names/map_ctr, 'b.-')
+        return
+
     def calc_pct_popular_names(self, names_list):
         """
         Input: 1-d list of names
@@ -208,30 +246,12 @@ class Names:
             total_pct += yr_dict[yr]
         # now go forth and start generating names
         for yr in yr_dict.keys():
-#            print(yr)
             # normalize pct to 100%
-            pct_yr = yr_dict[yr]/total_pct*100
-            # scan through SSA data and assign idx to names to reflect
-            # popularity, so we can randomly pick them according to their
-            # popularity
-            # The problem with this is that is assumes popular names are 100%
-            # of the names in the data set
-            yr_pop_arr = []
-            pop_ctr = 0
-            for name in self.name_idx:
-                pop_ctr += self.name_data[self.name_idx[name], yr - self.start_year]
-                # 0 column is the population fraction (0 - 1)
-                yr_pop_arr += [pop_ctr]
-                # increment counter for the array index
-#                idx_ctr += 1
-            # scale by number of total births that year
-            yr_pop_arr = np.array(yr_pop_arr)*1.0
-            yr_pop_arr /= yr_pop_arr[-1]
+            pct_yr = float(yr_dict[yr])/total_pct*100
+            yr_pop_arr = self.func1(yr)
             # now start generating names
             # get number of names for this year
-#            print('total births this year ', yr_pop_arr[-1])
             num_names_yr = int(round(pct_yr/100.0*pop_size))
-#            print(num_names_yr)
             for i in range(num_names_yr):
                 # generate random number in [0,1]
                 r = random.random()
@@ -239,9 +259,27 @@ class Names:
                 name_items = self.name_idx.items()
                 name = name_items[idx][0]
                 sample_pop += [name]
-                print(r, idx, name, self.name_data[self.name_idx[name], yr - self.start_year]/yr_pop_arr[-1])
-        
         return sample_pop
+    
+    def func1(self, yr):
+        # scan through SSA data and assign idx to names to reflect
+        # popularity, so we can randomly pick them according to their
+        # popularity
+        yr_pop_arr = []
+        pop_ctr = 0
+        for name in self.name_idx:
+            name_idx = self.name_idx[name]
+            pop_ctr += self.name_data[name_idx, yr - self.start_year]
+            # 0 column is the population fraction (0 - 1)
+            item2 = name
+            item1 = self.name_data[name_idx, yr - self.start_year]
+            item0 = pop_ctr
+
+            yr_pop_arr += [[item0, item1, item2]]
+        # scale by number of total births that year
+        for l in yr_pop_arr:
+            l[0] = float(l[0])/yr_pop_arr[-1][0]
+        return yr_pop_arr
 
 def sort_to_closest(l, r):
     """
@@ -249,14 +287,16 @@ def sort_to_closest(l, r):
     value to r
     """
     # find closest value to r
-#    ltr = 1 # less than r
     idx = -1
     ctr = 0
+    last_entry = []
     for i in l:
         # if i not less than r
-        if (i > r):
+        if (i[0] > r):
+#            print(last_entry, 'r_ix:', i[0], 'pop:',i[1],i[2],'r = ', r)
             return ctr
         ctr += 1
+        last_entry=i
     return idx
 
         
